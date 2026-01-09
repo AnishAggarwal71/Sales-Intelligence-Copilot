@@ -1,0 +1,81 @@
+# Sales Intelligence Copilot - Git Ignore
+
+# Environment and Secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# Model Artifacts (large files)
+models/*.pkl
+models/*.joblib
+models/*.h5
+*.pkl
+*.joblib
+
+# Output Files
+outputs/**
+!outputs/.gitkeep
+reports/**
+!reports/.gitkeep
+
+# Generated Data (optional - keep sample data)
+# data/sample/*.csv
+
+# Temporary Files
+*.log
+*.tmp
+*.cache
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Streamlit
+.streamlit/secrets.toml
