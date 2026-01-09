@@ -19,7 +19,7 @@ from src.data_processing import DataProcessor
 from src.metrics import MetricsCalculator
 from src.forecasting import train_and_forecast
 from src.churn_model import train_and_predict_churn
-from config.settings import TOP_N_AT_RISK, FORECAST_HORIZON_DAYS
+from config.settings import TOP_N_AT_RISK, FORECAST_HORIZON_MONTHS
 
 # Page configuration
 st.set_page_config(
@@ -267,7 +267,7 @@ def run_analysis():
         
         forecaster, future_forecast = train_and_forecast(
             metrics['mrr_series'],
-            forecast_days=FORECAST_HORIZON_DAYS,
+            forecast_months=FORECAST_HORIZON_MONTHS,
             save_model=False
         )
         st.session_state.forecaster = forecaster
@@ -355,7 +355,7 @@ def results_section():
 
 def show_forecast_chart():
     """Display MRR forecast chart"""
-    st.subheader("MRR Forecast - Next 90 Days")
+    st.subheader("MRR Forecast - Next 3 Months")
     
     forecaster = st.session_state.forecaster
     forecast_summary = forecaster.get_forecast_summary()
@@ -532,26 +532,44 @@ def show_export_section():
     
     with col3:
         if st.button("📊 Generate PPT Report", use_container_width=True):
-            with st.spinner("Generating report..."):
-                from src.insights_generator import generate_insights
-                from src.report_builder import build_full_report
-                
-                # Generate insights
-                insights = generate_insights(
-                    st.session_state.metrics,
-                    st.session_state.at_risk_customers
-                )
-                
-                # Build report
-                filepath = build_full_report(
-                    st.session_state.metrics,
-                    st.session_state.future_forecast,
-                    st.session_state.at_risk_customers,
-                    insights,
-                    st.session_state.forecaster
-                )
-                
-                st.success(f"Report generated: {filepath}")
+            with st.spinner("Generating PowerPoint report..."):
+                try:
+                    from src.insights_generator import generate_insights
+                    from src.report_builder import build_full_report
+                    
+                    # Add forecast_mrr to metrics for insights
+                    metrics = st.session_state.metrics.copy()
+                    metrics['forecast_mrr'] = st.session_state.future_forecast['predicted'].iloc[-1]
+                    metrics['at_risk_count'] = len(st.session_state.at_risk_customers)
+                    
+                    # Generate insights
+                    insights = generate_insights(
+                        metrics,
+                        st.session_state.at_risk_customers
+                    )
+                    
+                    # Build report
+                    filepath = build_full_report(
+                        metrics,
+                        st.session_state.future_forecast,
+                        st.session_state.at_risk_customers,
+                        insights,
+                        st.session_state.forecaster
+                    )
+                    
+                    st.success(f"✓ Report generated!")
+                    
+                    # Download button
+                    with open(filepath, 'rb') as f:
+                        st.download_button(
+                            label="📥 Download PowerPoint",
+                            data=f,
+                            file_name=f"sales_intelligence_report_{datetime.now().strftime('%Y%m%d')}.pptx",
+                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                        )
+                        
+                except Exception as e:
+                    st.error(f"Error generating report: {str(e)}")
 
 
 def main():
@@ -560,7 +578,7 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.image("project_logo.png", use_container_width=True)
+        st.image("https://via.placeholder.com/150x50/1f77b4/ffffff?text=Sales+Intel", use_container_width=True)
         st.markdown("---")
         
         st.markdown("### 📊 Navigation")

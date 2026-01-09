@@ -79,8 +79,8 @@ TOP_N_AT_RISK = 20  # Number of at-risk customers to highlight
 # ============================================================================
 
 # Forecasting settings
-FORECAST_HORIZON_DAYS = 90  # Forecast next 90 days
-FORECAST_FREQUENCY = 'D'  # Daily frequency
+FORECAST_HORIZON_MONTHS = 3  # Forecast next 3 months (~90 days)
+FORECAST_FREQUENCY = 'MS'  # Month Start frequency
 PROPHET_SEASONALITY_MODE = 'multiplicative'
 PROPHET_CHANGEPOINT_PRIOR_SCALE = 0.05
 

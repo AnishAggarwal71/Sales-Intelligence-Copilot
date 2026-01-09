@@ -103,12 +103,12 @@ class MRRForecaster:
         
         logger.info("✓ Model training complete")
     
-    def predict(self, periods: int = FORECAST_HORIZON_DAYS) -> pd.DataFrame:
+    def predict(self, periods: int = 3) -> pd.DataFrame:
         """
         Generate forecast for future periods
         
         Args:
-            periods: Number of days to forecast
+            periods: Number of months to forecast (default: 3 months = ~90 days)
             
         Returns:
             DataFrame with forecast results
@@ -116,10 +116,10 @@ class MRRForecaster:
         if self.model is None:
             raise ValueError("Model not trained. Call train() first.")
         
-        logger.info(f"Generating {periods}-day forecast...")
+        logger.info(f"Generating {periods}-month forecast...")
         
-        # Create future dataframe
-        future = self.model.make_future_dataframe(periods=periods, freq='D')
+        # Create future dataframe for MONTHS, not days
+        future = self.model.make_future_dataframe(periods=periods, freq='MS')  # MS = Month Start
         
         # Generate predictions
         forecast = self.model.predict(future)
@@ -127,7 +127,7 @@ class MRRForecaster:
         # Store forecast
         self.forecast_df = forecast
         
-        logger.info(f"✓ Forecast generated for {periods} days")
+        logger.info(f"✓ Forecast generated for {periods} months")
         
         return forecast
     
@@ -158,12 +158,12 @@ class MRRForecaster:
         
         return summary
     
-    def get_future_forecast(self, days_ahead: int = FORECAST_HORIZON_DAYS) -> pd.DataFrame:
+    def get_future_forecast(self, months_ahead: int = 3) -> pd.DataFrame:
         """
         Get only the future forecast (excluding historical data)
         
         Args:
-            days_ahead: Number of days into future
+            months_ahead: Number of months into future
             
         Returns:
             DataFrame with future predictions only
@@ -174,7 +174,7 @@ class MRRForecaster:
         last_actual_date = self.actual_df['ds'].max()
         
         # Filter for future only
-        future_only = summary[summary['date'] > last_actual_date].head(days_ahead)
+        future_only = summary[summary['date'] > last_actual_date].head(months_ahead)
         
         return future_only
     
@@ -307,14 +307,14 @@ class MRRForecaster:
 
 
 def train_and_forecast(mrr_series: pd.DataFrame, 
-                      forecast_days: int = FORECAST_HORIZON_DAYS,
+                      forecast_months: int = 3,
                       save_model: bool = True) -> Tuple[MRRForecaster, pd.DataFrame]:
     """
     Convenience function to train model and generate forecast
     
     Args:
         mrr_series: DataFrame with MRR time series
-        forecast_days: Number of days to forecast
+        forecast_months: Number of months to forecast (default: 3 = ~90 days)
         save_model: Whether to save the trained model
         
     Returns:
@@ -326,7 +326,7 @@ def train_and_forecast(mrr_series: pd.DataFrame,
     forecaster.train(mrr_series)
     
     # Predict
-    forecaster.predict(periods=forecast_days)
+    forecaster.predict(periods=forecast_months)
     
     # Calculate metrics
     forecaster.calculate_metrics()
@@ -336,7 +336,7 @@ def train_and_forecast(mrr_series: pd.DataFrame,
         forecaster.save_model()
     
     # Get future forecast
-    future_forecast = forecaster.get_future_forecast(days_ahead=forecast_days)
+    future_forecast = forecaster.get_future_forecast(months_ahead=forecast_months)
     
     return forecaster, future_forecast
 
@@ -368,7 +368,7 @@ if __name__ == "__main__":
         # Train and forecast
         forecaster, future_forecast = train_and_forecast(
             mrr_series,
-            forecast_days=90,
+            forecast_months=3,  # 3 months ahead
             save_model=True
         )
         
