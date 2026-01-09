@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from config.settings import (
-    FORECAST_HORIZON_DAYS,
+    FORECAST_HORIZON_MONTHS,
     PROPHET_SEASONALITY_MODE,
     PROPHET_CHANGEPOINT_PRIOR_SCALE,
     MODELS_DIR
