@@ -12,7 +12,7 @@ AI-powered automation for sales forecasting & customer churn insights.
 ## Quick Start
 ```bash
 # Clone and setup
-git clone https://github.com/yourusername/sales-intelligence-copilot.git
+git clone https://github.com/AnishAggarwal71/sales-intelligence-copilot.git
 cd sales-intelligence-copilot
 python -m venv venv
 venv\Scripts\activate  # Windows
