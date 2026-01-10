@@ -32,12 +32,12 @@ streamlit run app.py
 ## Demo
 <table>
   <tr>
-    <td><img src="Assets/First_Page.png" width="300"/></td>
-    <td><img src="Assets/Forecast_Visual.png" width="300"/></td>
+    <td><img src="assets/First_Page.png" width="300"/></td>
+    <td><img src="assets/Forecast_Visual.png" width="300"/></td>
   </tr>
   <tr>
-    <td><img src="Assets/PDF_Download_Option.png" width="300"/></td>
-    <td><img src="Assets/Insights_PPT.png" width="300"/></td>
+    <td><img src="assets/PDF_Download_Option.png" width="300"/></td>
+    <td><img src="assets/Insights_PPT.png" width="300"/></td>
   </tr>
 </table>
 
