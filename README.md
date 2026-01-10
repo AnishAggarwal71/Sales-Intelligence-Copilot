@@ -30,7 +30,16 @@ streamlit run app.py
 ```
 
 ## Demo
-[Add screenshot or video here]
+<table>
+  <tr>
+    <td><img src="Assets/First_Page.png" width="300"/></td>
+    <td><img src="Assets/Forecast_Visual.png" width="300"/></td>
+  </tr>
+  <tr>
+    <td><img src="Assets/PDF_Download_Option.png" width="300"/></td>
+    <td><img src="Assets/Insights_PPT.png" width="300"/></td>
+  </tr>
+</table>
 
 ## Tech Stack
 - **ML**: Prophet, Scikit-learn
