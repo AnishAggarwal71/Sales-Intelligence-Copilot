@@ -578,7 +578,7 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.image("https://via.placeholder.com/150x50/1f77b4/ffffff?text=Sales+Intel", use_container_width=True)
+        st.image("assets\project logo.png", use_container_width=True)
         st.markdown("---")
         
         st.markdown("### 📊 Navigation")
