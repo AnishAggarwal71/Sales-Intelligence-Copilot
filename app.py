@@ -578,7 +578,7 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.image("assets\project logo.png", use_container_width=True)
+        st.image("assets/project logo.png", use_container_width=True)
         st.markdown("---")
         
         st.markdown("### 📊 Navigation")
