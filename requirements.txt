@@ -1,9 +1,9 @@
 # Sales Intelligence Copilot - Dependencies
-# Python 3.9-3.11 required
+# Python 3.9-3.12 required
 
 # Core Data Processing
 pandas==2.0.3
-numpy==1.24.3
+numpy>1.24.3
 openpyxl==3.1.2
 
 # Machine Learning & Forecasting
