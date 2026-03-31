@@ -79,33 +79,48 @@ def init_session_state():
         st.session_state.metrics = None
     if 'forecaster' not in st.session_state:
         st.session_state.forecaster = None
+    if 'future_forecast' not in st.session_state:
+        st.session_state.future_forecast = None
     if 'churn_predictor' not in st.session_state:
         st.session_state.churn_predictor = None
     if 'at_risk_customers' not in st.session_state:
         st.session_state.at_risk_customers = None
+    if 'generated_report_bytes' not in st.session_state:
+        st.session_state.generated_report_bytes = None
+    if 'generated_report_name' not in st.session_state:
+        st.session_state.generated_report_name = None
 
 
 def load_sample_data():
     """Load sample data for demo"""
     from config.settings import SAMPLE_DATA_DIR
-    
+
     processor = DataProcessor()
-    
+
     customers_file = SAMPLE_DATA_DIR / "customers.csv"
     subscriptions_file = SAMPLE_DATA_DIR / "subscriptions.csv"
     transactions_file = SAMPLE_DATA_DIR / "transactions.csv"
-    
+
     if not customers_file.exists():
         st.error("Sample data not found. Please run `python data/generate_data.py` first.")
         return None
-    
+
     with st.spinner("Loading sample data..."):
         processor.load_customers(str(customers_file))
         processor.load_subscriptions(str(subscriptions_file))
-        processor.load_transactions(str(transactions_file))
+        if transactions_file.exists():
+            processor.load_transactions(str(transactions_file))
         processor.merge_datasets()
-    
+
     return processor
+
+
+def save_uploaded_file(uploaded_file, temp_dir: Path, base_name: str) -> Path:
+    """Persist an uploaded CSV/XLSX file locally while preserving its extension."""
+    suffix = Path(uploaded_file.name).suffix.lower() or '.csv'
+    temp_path = temp_dir / f"{base_name}{suffix}"
+    temp_path.write_bytes(uploaded_file.getvalue())
+    return temp_path
 
 
 def upload_section():
@@ -121,9 +136,9 @@ def upload_section():
         st.subheader("📁 Upload Your Data")
         st.markdown("Upload your sales data files or use sample data to try the demo.")
         
-        customers_file = st.file_uploader("Customers CSV", type=['csv', 'xlsx'], key='customers')
-        subscriptions_file = st.file_uploader("Subscriptions CSV", type=['csv', 'xlsx'], key='subscriptions')
-        transactions_file = st.file_uploader("Transactions CSV (Optional)", type=['csv', 'xlsx'], key='transactions')
+        customers_file = st.file_uploader("Customers file", type=['csv', 'xlsx', 'xls'], key='customers')
+        subscriptions_file = st.file_uploader("Subscriptions file", type=['csv', 'xlsx', 'xls'], key='subscriptions')
+        transactions_file = st.file_uploader("Transactions file (Optional)", type=['csv', 'xlsx', 'xls'], key='transactions')
         
         col_a, col_b = st.columns(2)
         
@@ -132,38 +147,31 @@ def upload_section():
                 if customers_file and subscriptions_file:
                     try:
                         processor = DataProcessor()
-                        
+
                         with st.spinner("Loading and processing data..."):
-                            # Save uploaded files temporarily
-                            customers_df = pd.read_csv(customers_file)
-                            subscriptions_df = pd.read_csv(subscriptions_file)
-                            
-                            # Create temp files
                             temp_dir = Path("temp")
                             temp_dir.mkdir(exist_ok=True)
-                            
-                            customers_path = temp_dir / "customers.csv"
-                            subscriptions_path = temp_dir / "subscriptions.csv"
-                            
-                            customers_df.to_csv(customers_path, index=False)
-                            subscriptions_df.to_csv(subscriptions_path, index=False)
-                            
+
+                            customers_path = save_uploaded_file(customers_file, temp_dir, "customers")
+                            subscriptions_path = save_uploaded_file(subscriptions_file, temp_dir, "subscriptions")
+
                             processor.load_customers(str(customers_path))
                             processor.load_subscriptions(str(subscriptions_path))
-                            
+
                             if transactions_file:
-                                transactions_df = pd.read_csv(transactions_file)
-                                transactions_path = temp_dir / "transactions.csv"
-                                transactions_df.to_csv(transactions_path, index=False)
+                                transactions_path = save_uploaded_file(transactions_file, temp_dir, "transactions")
                                 processor.load_transactions(str(transactions_path))
-                            
+
                             processor.merge_datasets()
-                        
+
                         st.session_state.processor = processor
                         st.session_state.data_loaded = True
+                        st.session_state.analysis_complete = False
+                        st.session_state.generated_report_bytes = None
+                        st.session_state.generated_report_name = None
                         st.success("✓ Data loaded successfully!")
                         st.rerun()
-                        
+
                     except Exception as e:
                         st.error(f"Error loading data: {str(e)}")
                 else:
@@ -175,6 +183,9 @@ def upload_section():
                 if processor:
                     st.session_state.processor = processor
                     st.session_state.data_loaded = True
+                    st.session_state.analysis_complete = False
+                    st.session_state.generated_report_bytes = None
+                    st.session_state.generated_report_name = None
                     st.success("✓ Sample data loaded!")
                     st.rerun()
     
@@ -536,19 +547,16 @@ def show_export_section():
                 try:
                     from src.insights_generator import generate_insights
                     from src.report_builder import build_full_report
-                    
-                    # Add forecast_mrr to metrics for insights
+
                     metrics = st.session_state.metrics.copy()
                     metrics['forecast_mrr'] = st.session_state.future_forecast['predicted'].iloc[-1]
                     metrics['at_risk_count'] = len(st.session_state.at_risk_customers)
-                    
-                    # Generate insights
+
                     insights = generate_insights(
                         metrics,
                         st.session_state.at_risk_customers
                     )
-                    
-                    # Build report
+
                     filepath = build_full_report(
                         metrics,
                         st.session_state.future_forecast,
@@ -556,20 +564,23 @@ def show_export_section():
                         insights,
                         st.session_state.forecaster
                     )
-                    
-                    st.success(f"✓ Report generated!")
-                    
-                    # Download button
-                    with open(filepath, 'rb') as f:
-                        st.download_button(
-                            label="📥 Download PowerPoint",
-                            data=f,
-                            file_name=f"sales_intelligence_report_{datetime.now().strftime('%Y%m%d')}.pptx",
-                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                        )
-                        
+
+                    report_path = Path(filepath)
+                    st.session_state.generated_report_bytes = report_path.read_bytes()
+                    st.session_state.generated_report_name = report_path.name
+                    st.success("✓ Report generated! Your download is ready below.")
+
                 except Exception as e:
                     st.error(f"Error generating report: {str(e)}")
+
+        if st.session_state.get('generated_report_bytes'):
+            st.download_button(
+                label="📥 Download Insights PPT",
+                data=st.session_state.generated_report_bytes,
+                file_name=st.session_state.generated_report_name or f"sales_intelligence_report_{datetime.now().strftime('%Y%m%d')}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True
+            )
 
 
 def main():
@@ -578,7 +589,9 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.image("assets/project logo.png", use_container_width=True)
+        logo_path = Path("assets/project logo.png")
+        if logo_path.exists():
+            st.image(str(logo_path), use_column_width=True)
         st.markdown("---")
         
         st.markdown("### 📊 Navigation")

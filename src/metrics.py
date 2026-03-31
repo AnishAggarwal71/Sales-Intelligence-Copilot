@@ -39,31 +39,25 @@ class MetricsCalculator:
     
     def calculate_mrr(self, as_of_date: datetime = None) -> pd.DataFrame:
         """
-        Calculate Monthly Recurring Revenue over time
-        
-        Args:
-            as_of_date: Calculate MRR as of this date (default: latest date)
-            
-        Returns:
-            DataFrame with date and MRR
+        Calculate Monthly Recurring Revenue over time.
+
+        Uses billed subscription revenue for each month so churn-at-period-end
+        events do not artificially depress that month's MRR.
         """
         logger.info("Calculating MRR time series...")
-        
-        # Get active subscriptions for each month
-        df = self.subscriptions[self.subscriptions['active'] == True].copy()
-        
-        # Extract year-month
+
+        df = self.subscriptions.copy()
+        df = df.dropna(subset=['period_start', 'revenue'])
+
+        if as_of_date is not None:
+            df = df[df['period_start'] <= pd.to_datetime(as_of_date)]
+
         df['year_month'] = df['period_start'].dt.to_period('M')
-        
-        # Calculate MRR per month (sum of revenue for active subscriptions)
         mrr_series = df.groupby('year_month')['revenue'].sum().reset_index()
         mrr_series.columns = ['year_month', 'MRR']
-        
-        # Convert period to timestamp for plotting
         mrr_series['date'] = mrr_series['year_month'].dt.to_timestamp()
-        
+
         logger.info(f"✓ MRR calculated for {len(mrr_series)} months")
-        
         return mrr_series[['date', 'MRR']]
     
     def calculate_current_mrr(self) -> float:
@@ -162,18 +156,12 @@ class MetricsCalculator:
         return churn_df[['date', 'retention_rate', 'churn_rate']]
     
     def calculate_arpu(self) -> pd.DataFrame:
-        """
-        Calculate Average Revenue Per User over time
-        
-        Returns:
-            DataFrame with date and ARPU
-        """
+        """Calculate Average Revenue Per Billed User over time."""
         logger.info("Calculating ARPU...")
-        
-        df = self.subscriptions[self.subscriptions['active'] == True].copy()
+
+        df = self.subscriptions.dropna(subset=['period_start', 'revenue']).copy()
         df['year_month'] = df['period_start'].dt.to_period('M')
-        
-        # Calculate ARPU per month
+
         arpu_data = df.groupby('year_month').agg({
             'revenue': 'sum',
             'customer_id': 'nunique'
@@ -224,16 +212,16 @@ class MetricsCalculator:
             return clv
     
     def calculate_active_customers(self) -> int:
-        """
-        Get count of currently active customers
-        
-        Returns:
-            Number of active customers
-        """
+        """Get count of active customers in the most recent month."""
+        if self.subscriptions.empty or 'period_start' not in self.subscriptions.columns:
+            return 0
+
+        latest_month = self.subscriptions['period_start'].dt.to_period('M').max()
         active = self.subscriptions[
-            self.subscriptions['active'] == True
+            (self.subscriptions['period_start'].dt.to_period('M') == latest_month) &
+            (self.subscriptions['active'] == True)
         ]['customer_id'].nunique()
-        
+
         return int(active)
     
     def calculate_customer_cohorts(self) -> pd.DataFrame:

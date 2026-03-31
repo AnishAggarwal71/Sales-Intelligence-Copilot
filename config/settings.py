@@ -161,16 +161,16 @@ COLOR_PALETTE = {
 # ============================================================================
 
 SYNTHETIC_DATA_CONFIG = {
-    'n_customers': 10000,
-    'start_date': '2021-01-01',
-    'end_date': '2024-12-31',
-    'base_churn_rate': 0.05,  # 5% monthly churn
-    'seasonality_amplitude': 0.15,  # 15% seasonal variation
-    'growth_rate': 0.02,  # 2% monthly growth
+    'n_customers': 4500,
+    'start_date': '2024-01-01',
+    'end_date': '2025-12-31',
+    'base_churn_rate': 0.028,  # 2.8% monthly churn baseline
+    'seasonality_amplitude': 0.10,  # noticeable but realistic seasonal movement
+    'growth_rate': 0.035,  # 3.5% monthly new-logo growth
     'plans': {
-        'basic': {'price': 29.0, 'weight': 0.5},
-        'pro': {'price': 99.0, 'weight': 0.35},
-        'enterprise': {'price': 499.0, 'weight': 0.15}
+        'basic': {'price': 29.0, 'weight': 0.55},
+        'pro': {'price': 99.0, 'weight': 0.33},
+        'enterprise': {'price': 499.0, 'weight': 0.12}
     },
     'segments': {
         'SMB': 0.6,

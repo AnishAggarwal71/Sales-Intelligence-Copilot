@@ -270,18 +270,59 @@ class ReportBuilder:
 
 def create_chart_image(fig: go.Figure, width: int = 1200, height: int = 600) -> bytes:
     """
-    Convert Plotly figure to image bytes
-    
-    Args:
-        fig: Plotly figure
-        width: Image width in pixels
-        height: Image height in pixels
-        
-    Returns:
-        Image as bytes
+    Convert a Plotly figure to image bytes.
+
+    Falls back to a lightweight Matplotlib renderer when Kaleido is not installed,
+    so PPT export still works in local environments.
     """
-    img_bytes = fig.to_image(format="png", width=width, height=height)
-    return img_bytes
+    try:
+        return fig.to_image(format="png", width=width, height=height)
+    except Exception as exc:
+        logger.warning("Plotly image export unavailable, using Matplotlib fallback: %s", exc)
+
+        import matplotlib.pyplot as plt
+
+        dpi = 150
+        fig_mpl, ax = plt.subplots(figsize=(width / dpi, height / dpi), dpi=dpi)
+        previous_y = None
+
+        for trace in fig.data:
+            x = list(getattr(trace, 'x', []))
+            y = pd.to_numeric(pd.Series(getattr(trace, 'y', [])), errors='coerce')
+            if len(x) == 0 or y.empty:
+                continue
+
+            line = getattr(trace, 'line', None)
+            color = getattr(line, 'color', None) or '#1f77b4'
+            dash = getattr(line, 'dash', 'solid') or 'solid'
+            linestyle = {'dash': '--', 'dot': ':', 'dashdot': '-.'}.get(dash, '-')
+            label = trace.name if getattr(trace, 'showlegend', True) else None
+
+            if getattr(trace, 'fill', None) == 'tonexty' and previous_y is not None:
+                ax.fill_between(x, y, previous_y, color=color, alpha=0.20, label=label)
+            else:
+                ax.plot(x, y, linestyle=linestyle, color=color, linewidth=2.5, label=label)
+
+            previous_y = y
+
+        chart_title = fig.layout.title.text if fig.layout.title else 'Revenue Forecast'
+        xaxis_title = fig.layout.xaxis.title.text if fig.layout.xaxis.title else 'Date'
+        yaxis_title = fig.layout.yaxis.title.text if fig.layout.yaxis.title else 'Value'
+
+        ax.set_title(chart_title)
+        ax.set_xlabel(xaxis_title)
+        ax.set_ylabel(yaxis_title)
+        ax.grid(alpha=0.2)
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend()
+
+        img_stream = io.BytesIO()
+        plt.tight_layout()
+        fig_mpl.savefig(img_stream, format='png', bbox_inches='tight')
+        plt.close(fig_mpl)
+        img_stream.seek(0)
+        return img_stream.getvalue()
 
 
 def build_full_report(metrics: dict, forecast_df: pd.DataFrame, 
