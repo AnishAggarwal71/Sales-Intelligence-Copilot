@@ -143,7 +143,7 @@ def upload_section():
         col_a, col_b = st.columns(2)
         
         with col_a:
-            if st.button("🚀 Load Data", type="primary", use_container_width=True):
+            if st.button("🚀 Load Data", type="primary", width='stretch'):
                 if customers_file and subscriptions_file:
                     try:
                         processor = DataProcessor()
@@ -178,7 +178,7 @@ def upload_section():
                     st.warning("Please upload both Customers and Subscriptions files.")
         
         with col_b:
-            if st.button("🎯 Use Sample Data", use_container_width=True):
+            if st.button("🎯 Use Sample Data", width='stretch'):
                 processor = load_sample_data()
                 if processor:
                     st.session_state.processor = processor
@@ -242,17 +242,17 @@ def data_preview_section():
     tab1, tab2, tab3 = st.tabs(["Customers", "Subscriptions", "Merged Data"])
     
     with tab1:
-        st.dataframe(processor.customers.head(100), use_container_width=True)
+        st.dataframe(processor.customers.head(100), width='stretch')
     
     with tab2:
-        st.dataframe(processor.subscriptions.head(100), use_container_width=True)
+        st.dataframe(processor.subscriptions.head(100), width='stretch')
     
     with tab3:
-        st.dataframe(processor.merged_data.head(100), use_container_width=True)
+        st.dataframe(processor.merged_data.head(100), width='stretch')
     
     # Run Analysis button
     st.markdown("---")
-    if st.button("🤖 Run AI Analysis", type="primary", use_container_width=True):
+    if st.button("🤖 Run AI Analysis", type="primary", width='stretch'):
         run_analysis()
 
 
@@ -422,7 +422,7 @@ def show_forecast_chart():
         height=500
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     
     # Show metrics
     col1, col2, col3 = st.columns(3)
@@ -450,7 +450,7 @@ def show_churn_analysis():
     
     st.dataframe(
         display_df[['customer_id', 'churn_probability', 'current_revenue', 'risk_score', 'tenure_months']],
-        use_container_width=True,
+        width='stretch',
         column_config={
             "customer_id": "Customer ID",
             "churn_probability": st.column_config.NumberColumn("Churn Risk (%)", format="%.1f%%"),
@@ -498,7 +498,7 @@ def show_revenue_trends():
         title='MRR Trend'
     )
     fig_mrr.update_layout(height=400)
-    st.plotly_chart(fig_mrr, use_container_width=True)
+    st.plotly_chart(fig_mrr, width='stretch')
     
     # Churn rate over time
     fig_churn = px.line(
@@ -508,7 +508,7 @@ def show_revenue_trends():
         title='Monthly Churn Rate (%)'
     )
     fig_churn.update_layout(height=400)
-    st.plotly_chart(fig_churn, use_container_width=True)
+    st.plotly_chart(fig_churn, width='stretch')
 
 
 def show_export_section():
@@ -526,7 +526,7 @@ def show_export_section():
             data=csv,
             file_name=f"at_risk_customers_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv",
-            use_container_width=True
+            width='stretch'
         )
     
     with col2:
@@ -538,11 +538,11 @@ def show_export_section():
             data=csv,
             file_name=f"mrr_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv",
-            use_container_width=True
+            width='stretch'
         )
     
     with col3:
-        if st.button("📊 Generate PPT Report", use_container_width=True):
+        if st.button("📊 Generate PPT Report", width='stretch'):
             with st.spinner("Generating PowerPoint report..."):
                 try:
                     from src.insights_generator import generate_insights
@@ -591,7 +591,7 @@ def main():
     with st.sidebar:
         logo_path = Path("assets/project logo.png")
         if logo_path.exists():
-            st.image(str(logo_path), use_column_width=True)
+            st.image(str(logo_path), width='stretch')
         st.markdown("---")
         
         st.markdown("### 📊 Navigation")

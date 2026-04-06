@@ -79,3 +79,6 @@ htmlcov/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Docs
+Sales_Intelligence_Copilot_Overview.docx

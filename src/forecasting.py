@@ -111,7 +111,7 @@ class MRRForecaster:
         else:
             long_term_growth = recent_growth
 
-        monthly_growth = float(np.clip(0.65 * recent_growth + 0.35 * long_term_growth, -0.02, 0.08))
+        monthly_growth = float(np.clip(0.65 * recent_growth + 0.35 * long_term_growth, 0.0, 0.08))
         residual_scale = float(np.clip((df['y'] - df['smoothed']).abs().mean() / max(df['y'].mean(), 1), 0.05, 0.15))
 
         return {
@@ -140,19 +140,19 @@ class MRRForecaster:
                 raise RuntimeError("Prophet is not installed in the environment")
 
             self.model = Prophet(
-                growth='logistic',
-                seasonality_mode=self.seasonality_mode,
-                changepoint_prior_scale=min(PROPHET_CHANGEPOINT_PRIOR_SCALE, 0.08),
-                seasonality_prior_scale=8.0,
+                growth='linear',
+                seasonality_mode='additive',
+                changepoint_prior_scale=0.03,  # Moderate smoothing
+                seasonality_prior_scale=1.0,
                 interval_width=0.80,
-                n_changepoints=min(max(len(self.train_df) // 2, 3), 10),
-                yearly_seasonality=allow_yearly,
+                n_changepoints=3,
+                yearly_seasonality=False,  # Disable yearly seasonality to avoid over-seasonalizing
                 weekly_seasonality=weekly_seasonality,
                 daily_seasonality=False
             )
 
             if len(self.train_df) >= 12:
-                self.model.add_seasonality(name='monthly', period=30.5, fourier_order=4)
+                self.model.add_seasonality(name='monthly', period=30.5, fourier_order=2)  # Reduced order
 
             logger.info("Fitting Prophet model...")
             self.model.fit(self.train_df)
@@ -230,8 +230,10 @@ class MRRForecaster:
 
         if self.model_type == 'prophet':
             future = self.model.make_future_dataframe(periods=periods, freq='MS')
-            future['cap'] = self.train_df['cap'].iloc[-1]
-            future['floor'] = self.train_df['floor'].iloc[-1]
+            # Only set cap/floor for logistic growth
+            if hasattr(self.model, 'growth') and self.model.growth == 'logistic':
+                future['cap'] = self.train_df['cap'].iloc[-1]
+                future['floor'] = self.train_df['floor'].iloc[-1]
             forecast = self.model.predict(future)
         else:
             forecast = self._predict_with_fallback(periods)
