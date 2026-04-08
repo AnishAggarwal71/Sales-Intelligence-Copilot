@@ -30,5 +30,5 @@ Pillow==10.0
 tqdm==4.66
 
 # Optional extras:
-prophet==1.1   # app works without this; forecasting falls back automatically
-kaleido==0.2   # optional, PPT export already falls back to Matplotlib when absent
+prophet   # app works without this; forecasting falls back automatically
+kaleido   # optional, PPT export already falls back to Matplotlib when absent
