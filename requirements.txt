@@ -2,33 +2,33 @@
 # Recommended Python version is pinned in `runtime.txt`.
 
 # Core data processing
-pandas==2.2.3
-numpy==1.27.5
-openpyxl==3.1.2
+pandas==2.2
+numpy==1.27
+openpyxl==3.1
 
 # Machine learning
-scikit-learn==1.3.2
-joblib==1.3.2
+scikit-learn==1.3
+joblib==1.3
 
 # Visualization
-plotly==5.18.0
-matplotlib==3.8.2
-seaborn==0.13.0
+plotly==5.18
+matplotlib==3.8
+seaborn==0.13
 
 # Web app
-streamlit==1.29.0
+streamlit==1.29
 
 # LLM integration
-openai==1.6.1
-python-dotenv==1.0.0
+openai==1.6
+python-dotenv==1.0
 
 # Reporting
-python-pptx==0.6.23
-Pillow==10.0.1
+python-pptx==0.6
+Pillow==10.0
 
 # Utilities
-tqdm==4.66.1
+tqdm==4.66
 
 # Optional extras:
-# prophet==1.1.5   # app works without this; forecasting falls back automatically
-# kaleido==0.2.1   # optional, PPT export already falls back to Matplotlib when absent
+prophet==1.1   # app works without this; forecasting falls back automatically
+kaleido==0.2   # optional, PPT export already falls back to Matplotlib when absent
