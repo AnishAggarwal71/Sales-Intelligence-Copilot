@@ -154,8 +154,11 @@ OPENAI_API_KEY = "your_key_here"
     <td><img src="assets/Forecast_Visual.png" width="300"/></td>
   </tr>
   <tr>
+    <td><img src="assets/Analysis_Result.png" width="300"/></td>
     <td><img src="assets/PDF_Download_Option.png" width="300"/></td>
-    <td><img src="assets/Insights_PPT.png" width="300"/></td>
+  </tr>
+  <tr>
+    <td><img src="assets/PDF_Download_Option.png" width="300"/></td>
   </tr>
 </table>
 
