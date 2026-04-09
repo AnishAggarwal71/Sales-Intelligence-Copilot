@@ -2,6 +2,8 @@
 
 AI-powered SaaS analytics for **MRR forecasting**, **churn risk detection**, and **executive-ready PowerPoint reporting**.
 
+[Click here to visit the deployed streamlit app.](https://anishaggarwal71-sales-intelligence-copilot-app-t4qxd1.streamlit.app/)
+
 ---
 
 ## 🚀 Features
