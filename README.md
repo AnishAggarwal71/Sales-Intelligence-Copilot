@@ -81,47 +81,56 @@ Then click **“Use Sample Data”** in the app.
 
 ## 📂 Using Your Own Data
 
-The app supports uploading your own CSV files directly from the UI.
+The app supports uploading your own CSV files directly from the UI. The upload screen shows a full column reference so you don't need to memorise anything here — but the quick summary is below.
 
 ### Required files
 
 #### `customers.csv`
-Required columns:
-- `customer_id`
-- `signup_date`
-- `country`
-- `plan`
-- `monthly_price`
-- `segment`
-- `first_source`
+
+| Column | Required? |
+|--------|-----------|
+| `customer_id` | ✅ Required |
+| `signup_date` | ✅ Required |
+| `monthly_price` | 🔵 Auto-calculated from subscriptions |
+| `plan` | ⭐ Recommended (improves churn model) |
+| `segment` | ⭐ Recommended (improves churn model) |
+| `country` | ➕ Optional |
+| `first_source` | ➕ Optional |
 
 #### `subscriptions.csv`
-Required columns:
-- `subscription_id`
-- `customer_id`
-- `period_start`
-- `period_end`
-- `revenue`
-- `is_renewal`
-- `churn_flag`
-- `active`
-- `num_logins`
-- `feature_x_usage`
 
-#### `transactions.csv` *(optional but recommended)*
-Suggested columns:
-- `transaction_id`
-- `customer_id`
-- `amount`
-- `transaction_date`
-- `payment_method`
+| Column | Required? |
+|--------|-----------|
+| `customer_id` | ✅ Required |
+| `period_start` | ✅ Required |
+| `period_end` | ✅ Required |
+| `revenue` | ✅ Required |
+| `subscription_id` | 🔵 Auto-generated |
+| `churn_flag` | 🔵 Auto-calculated |
+| `active` | 🔵 Auto-calculated |
+| `is_renewal` | 🔵 Auto-calculated |
+| `num_logins` | ⭐ Recommended (improves churn model) |
+| `feature_x_usage` | ⭐ Recommended (improves churn model) |
+
+> **Minimum data:** the forecasting model needs at least **3 months of subscription history**. The churn model works with any volume but improves significantly with 6+ months.
+
+#### `transactions.csv` *(optional)*
+Used for enrichment only — the full analysis runs without it.
+
+| Column | Notes |
+|--------|-------|
+| `transaction_id` | |
+| `customer_id` | Must match IDs in customers/subscriptions |
+| `amount` | |
+| `transaction_date` | |
+| `payment_method` | |
 
 ### App flow
-1. Upload your files or use sample data
-2. Review data quality and preview tables
-3. Click **Run AI Analysis**
-4. Explore the dashboard
-5. Click **Generate PPT Report** and download the insights deck
+1. Upload your files (or click **Use Sample Data** to try a demo)
+2. The app validates your data and auto-calculates any missing derived columns
+3. Review the data quality report, then click **Run AI Analysis** (~30 seconds)
+4. Explore forecast, churn risk table, and revenue trends
+5. Click **Generate PowerPoint Report** to download a ready-to-present deck
 
 ---
 
@@ -161,7 +170,6 @@ OPENAI_API_KEY = "your_key_here"
     <td><img src="assets/Insights_PPT.png" width="300"/></td>
   </tr>
 </table>
-
 ---
 
 ## 📁 Project Structure

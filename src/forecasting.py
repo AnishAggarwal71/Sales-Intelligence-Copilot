@@ -130,6 +130,16 @@ class MRRForecaster:
         logger.info("=" * 60)
 
         train_df = self.prepare_data(mrr_series)
+
+        # Require at least 3 months of history.  Fewer data points cannot
+        # produce a meaningful trend; the fallback model would just extrapolate
+        # a single value, which is more misleading than an outright error.
+        if len(train_df) < 3:
+            raise ValueError(
+                f"Need at least 3 months of MRR history to train a forecast model "
+                f"(got {len(train_df)} month(s)). Please upload more data."
+            )
+
         self.actual_df = train_df[['ds', 'y']].copy()
         self.train_df = self._build_training_frame(train_df)
 
@@ -271,32 +281,67 @@ class MRRForecaster:
         return summary[summary['date'] > last_actual_date].head(months_ahead).reset_index(drop=True)
 
     def calculate_metrics(self) -> Dict:
-        """Calculate in-sample forecast accuracy metrics."""
-        if self.forecast_df is None or self.actual_df is None:
-            raise ValueError("Need both forecast and actual data for metrics")
+        """
+        Calculate out-of-sample forecast accuracy by holding out the last 3
+        months of actuals, retraining on the remainder, predicting those 3
+        months, then scoring against the real values.
 
-        comparison = self.actual_df.merge(
-            self.forecast_df[['ds', 'yhat']],
-            on='ds',
-            how='inner'
-        )
+        Falls back to in-sample metrics when fewer than 6 months of data are
+        available (not enough to split meaningfully).
+        """
+        if self.actual_df is None:
+            raise ValueError("Need actual data for metrics — call train() first.")
 
-        actual = comparison['y'].values
-        predicted = comparison['yhat'].values
+        n = len(self.actual_df)
+        holdout = min(3, n // 2)   # never hold out more than half the data
+
+        if n < 6:
+            # Too little data for a meaningful split — use in-sample as fallback
+            logger.warning("Fewer than 6 months of data; reporting in-sample metrics.")
+            if self.forecast_df is None:
+                raise ValueError("No forecast available — call predict() first.")
+            comparison = self.actual_df.merge(
+                self.forecast_df[['ds', 'yhat']], on='ds', how='inner'
+            )
+            actual    = comparison['y'].values
+            predicted = comparison['yhat'].values
+        else:
+            train_series = self.actual_df.iloc[:-holdout].rename(
+                columns={'ds': 'date', 'y': 'MRR'}
+            )
+            test_actual = self.actual_df.iloc[-holdout:]
+
+            eval_forecaster = MRRForecaster(seasonality_mode=self.seasonality_mode)
+            eval_forecaster.train(train_series)
+            eval_forecast = eval_forecaster.predict(periods=holdout)
+
+            comparison = test_actual.merge(
+                eval_forecast[['ds', 'yhat']], on='ds', how='inner'
+            )
+            if comparison.empty:
+                # Date alignment edge-case — fall back to in-sample
+                logger.warning("Holdout dates did not align with forecast dates; using in-sample metrics.")
+                comparison = self.actual_df.merge(
+                    self.forecast_df[['ds', 'yhat']], on='ds', how='inner'
+                )
+            actual    = comparison['y'].values
+            predicted = comparison['yhat'].values
+            logger.info(f"Out-of-sample evaluation: {holdout} holdout months vs {n - holdout} training months")
+
         denominator = np.where(actual == 0, 1, actual)
-
-        mae = np.mean(np.abs(actual - predicted))
+        mae  = np.mean(np.abs(actual - predicted))
         rmse = np.sqrt(np.mean((actual - predicted) ** 2))
         mape = np.mean(np.abs((actual - predicted) / denominator)) * 100
 
         self.metrics = {
-            'MAE': round(float(mae), 2),
+            'MAE':  round(float(mae),  2),
             'RMSE': round(float(rmse), 2),
-            'MAPE': round(float(mape), 2)
+            'MAPE': round(float(mape), 2),
         }
 
         logger.info(
-            f"✓ Forecast Metrics ({self.model_type}): MAE=${mae:,.2f}, RMSE=${rmse:,.2f}, MAPE={mape:.2f}%"
+            f"✓ Forecast Metrics ({self.model_type}): "
+            f"MAE=${mae:,.2f}, RMSE=${rmse:,.2f}, MAPE={mape:.2f}%"
         )
         return self.metrics
 

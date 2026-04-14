@@ -71,7 +71,7 @@ FREQUENCY_WINDOWS = [30, 90, 180]  # Days for frequency calculations
 MONETARY_WINDOWS = [30, 90, 180]  # Days for monetary calculations
 
 # Risk thresholds
-HIGH_RISK_THRESHOLD = 0.7  # Churn probability threshold for high risk
+HIGH_RISK_THRESHOLD = 0.5  # Churn probability threshold for high risk
 TOP_N_AT_RISK = 20  # Number of at-risk customers to highlight
 
 # ============================================================================

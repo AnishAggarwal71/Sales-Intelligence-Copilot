@@ -104,16 +104,22 @@ class MetricsCalculator:
         
         # Calculate customers at start and churned per period
         churn_data = []
-        
+
         for period_val in df['period'].unique():
             period_df = df[df['period'] == period_val]
-            
-            # Customers at start of period (active at beginning)
+
+            # Customers at start of period (unique customer IDs with any subscription)
             customers_start = period_df['customer_id'].nunique()
-            
-            # Customers who churned (churn_flag = 1)
-            churned = period_df[period_df['churn_flag'] == 1]['customer_id'].nunique()
-            
+
+            # A customer is churned only when ALL their subscriptions in this period
+            # are flagged as churned.  Customers who keep at least one active product
+            # line are NOT counted as churned.
+            if 'churn_flag' in period_df.columns:
+                customer_flags = period_df.groupby('customer_id')['churn_flag'].min()
+                churned = int((customer_flags == 1).sum())
+            else:
+                churned = 0
+
             # Churn rate
             churn_rate = (churned / customers_start * 100) if customers_start > 0 else 0
             
@@ -156,22 +162,31 @@ class MetricsCalculator:
         return churn_df[['date', 'retention_rate', 'churn_rate']]
     
     def calculate_arpu(self) -> pd.DataFrame:
-        """Calculate Average Revenue Per Billed User over time."""
+        """Calculate Average Revenue Per Billed User over time.
+
+        Customers with multiple subscription rows (add-ons, expansions) are
+        consolidated to their total revenue per month so that one customer
+        always counts as one customer in the denominator.
+        """
         logger.info("Calculating ARPU...")
 
         df = self.subscriptions.dropna(subset=['period_start', 'revenue']).copy()
         df['year_month'] = df['period_start'].dt.to_period('M')
 
-        arpu_data = df.groupby('year_month').agg({
-            'revenue': 'sum',
-            'customer_id': 'nunique'
-        }).reset_index()
-        
-        arpu_data['ARPU'] = arpu_data['revenue'] / arpu_data['customer_id']
+        # Sum revenue per customer per month first, then aggregate across customers.
+        # This prevents add-on rows from inflating the revenue-per-head calculation.
+        per_customer = df.groupby(['year_month', 'customer_id'], as_index=False)['revenue'].sum()
+
+        arpu_data = per_customer.groupby('year_month').agg(
+            total_revenue=('revenue', 'sum'),
+            customer_count=('customer_id', 'nunique')
+        ).reset_index()
+
+        arpu_data['ARPU'] = arpu_data['total_revenue'] / arpu_data['customer_count']
         arpu_data['date'] = arpu_data['year_month'].dt.to_timestamp()
-        
+
         logger.info(f"✓ ARPU calculated for {len(arpu_data)} months")
-        
+
         return arpu_data[['date', 'ARPU']]
     
     def calculate_current_arpu(self) -> float:

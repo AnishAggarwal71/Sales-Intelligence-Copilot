@@ -24,6 +24,42 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _fallback_summary(metrics: Dict) -> str:
+    """Template-based summary used when the OpenAI API is unavailable."""
+    return f"""
+EXECUTIVE SUMMARY
+
+Revenue Performance:
+• Current MRR stands at ${metrics.get('current_mrr', 0):,.0f} with {metrics.get('mrr_growth_mom', 0):+.1f}% month-over-month growth
+• Annualized ARR of ${metrics.get('arr', 0):,.0f} serving {metrics.get('active_customers', 0):,} active customers
+
+Customer Health:
+• Current churn rate at {metrics.get('churn_rate', 0):.1f}% with {metrics.get('at_risk_count', 0)} high-value customers identified as at-risk
+• Average revenue per user (ARPU) of ${metrics.get('arpu', 0):,.2f}
+
+Key Implications:
+• Proactive retention efforts needed for at-risk segment to protect revenue base
+• Revenue trajectory indicates {"positive" if metrics.get('mrr_growth_mom', 0) > 0 else "concerning"} momentum requiring {"continued investment" if metrics.get('mrr_growth_mom', 0) > 0 else "immediate attention"}
+    """.strip()
+
+
+def _fallback_recommendations(metrics: Dict) -> str:
+    """Template-based recommendations used when the OpenAI API is unavailable."""
+    churn = metrics.get('churn_rate', 0)
+    return f"""
+STRATEGIC RECOMMENDATIONS
+
+1. Customer Retention Program:
+Deploy targeted retention campaigns for the {metrics.get('at_risk_count', 0)} at-risk customers. Consider personalized outreach, loyalty discounts, or enhanced support to reduce churn from current {churn:.1f}%.
+
+2. Revenue Protection:
+Prioritize high-value at-risk customers for immediate intervention. Assign dedicated customer success managers to accounts with monthly revenue exceeding $200.
+
+3. Product & Engagement:
+Analyze usage patterns among churned customers to identify product gaps. Implement proactive engagement triggers when usage metrics drop below historical averages.
+    """.strip()
+
+
 class InsightsGenerator:
     """Generate AI-powered business insights using LLM"""
     
@@ -150,39 +186,12 @@ class InsightsGenerator:
     
     def _fallback_summary(self, metrics: Dict) -> str:
         """Fallback summary if API fails"""
-        return f"""
-EXECUTIVE SUMMARY
+        return _fallback_summary(metrics)
 
-Revenue Performance:
-• Current MRR stands at ${metrics.get('current_mrr', 0):,.0f} with {metrics.get('mrr_growth_mom', 0):+.1f}% month-over-month growth
-• Annualized ARR of ${metrics.get('arr', 0):,.0f} serving {metrics.get('active_customers', 0):,} active customers
-
-Customer Health:
-• Current churn rate at {metrics.get('churn_rate', 0):.1f}% with {metrics.get('at_risk_count', 0)} high-value customers identified as at-risk
-• Average revenue per user (ARPU) of ${metrics.get('arpu', 0):,.2f}
-
-Key Implications:
-• Proactive retention efforts needed for at-risk segment to protect revenue base
-• Revenue trajectory indicates {"positive" if metrics.get('mrr_growth_mom', 0) > 0 else "concerning"} momentum requiring {"continued investment" if metrics.get('mrr_growth_mom', 0) > 0 else "immediate attention"}
-        """.strip()
-    
     def _fallback_recommendations(self, metrics: Dict) -> str:
         """Fallback recommendations if API fails"""
-        churn = metrics.get('churn_rate', 0)
-        
-        return f"""
-STRATEGIC RECOMMENDATIONS
+        return _fallback_recommendations(metrics)
 
-1. Customer Retention Program:
-Deploy targeted retention campaigns for the {metrics.get('at_risk_count', 0)} at-risk customers. Consider personalized outreach, loyalty discounts, or enhanced support to reduce churn from current {churn:.1f}%.
-
-2. Revenue Protection:
-Prioritize high-value at-risk customers for immediate intervention. Assign dedicated customer success managers to accounts with monthly revenue exceeding $200.
-
-3. Product & Engagement:
-Analyze usage patterns among churned customers to identify product gaps. Implement proactive engagement triggers when usage metrics drop below historical averages.
-        """.strip()
-    
     def generate_full_report_insights(self, metrics: Dict, at_risk_customers: List[Dict]) -> Dict[str, str]:
         """
         Generate all insights for a complete report
@@ -231,11 +240,9 @@ def generate_insights(metrics: Dict, at_risk_customers=None) -> Dict[str, str]:
         
     except Exception as e:
         logger.error(f"Error in insights generation: {e}")
-        # Return fallback insights
-        generator = InsightsGenerator.__new__(InsightsGenerator)
         return {
-            'executive_summary': generator._fallback_summary(metrics),
-            'recommendations': generator._fallback_recommendations(metrics)
+            'executive_summary': _fallback_summary(metrics),
+            'recommendations': _fallback_recommendations(metrics)
         }
 
 

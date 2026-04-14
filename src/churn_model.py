@@ -139,7 +139,30 @@ class ChurnPredictor:
         else:
             customer_features['churned'] = (~customer_features['active']).astype(int)
         
-        # Fill NaN values
+        # Fill NaN values with feature-appropriate defaults.
+        # Core financial/tenure columns get the median so that missing
+        # values don't look like "zero tenure" or "zero revenue".
+        # Optional usage columns (logins, feature_usage) get -1 so the
+        # model can distinguish "no data available" from "genuinely zero
+        # activity" — a meaningful difference for churn prediction.
+        core_cols = [
+            'tenure_days', 'tenure_months', 'total_revenue', 'avg_revenue',
+            'revenue_std', 'min_revenue', 'max_revenue', 'revenue_per_month',
+            'monthly_price', 'subscription_count'
+        ]
+        usage_cols = [
+            'total_logins', 'avg_logins', 'max_logins',
+            'avg_feature_usage', 'max_feature_usage'
+        ]
+        for col in core_cols:
+            if col in customer_features.columns and customer_features[col].isna().any():
+                customer_features[col] = customer_features[col].fillna(
+                    customer_features[col].median()
+                )
+        for col in usage_cols:
+            if col in customer_features.columns:
+                customer_features[col] = customer_features[col].fillna(-1)
+        # Any remaining NaNs (e.g. one-hot dummies) default to 0
         customer_features = customer_features.fillna(0)
         
         logger.info(f"✓ Created {len(customer_features.columns)} features for {len(customer_features)} customers")
@@ -157,8 +180,10 @@ class ChurnPredictor:
             List of feature column names
         """
         # Numeric features
+        # Note: days_since_last_activity is excluded — for churned customers it
+        # reflects when they churned (last subscription period), not behaviour,
+        # which leaks the label directly into the features.
         numeric_features = [
-            'days_since_last_activity',
             'tenure_days',
             'tenure_months',
             'subscription_count',
@@ -310,8 +335,12 @@ class ChurnPredictor:
             'active': features_df.get('active', True)
         })
         
-        # Calculate risk score (probability * revenue)
-        results['risk_score'] = results['churn_probability'] * results['current_revenue']
+        # Risk score: churn_probability × revenue, normalised to 0–100
+        # This stays meaningful (high-value + high-risk = highest score) while
+        # being visually distinct from the raw revenue column.
+        raw_risk = results['churn_probability'] * results['current_revenue']
+        max_risk = raw_risk.max()
+        results['risk_score'] = (raw_risk / max_risk * 100).round(1) if max_risk > 0 else 0
         
         # Sort by risk score
         results = results.sort_values('risk_score', ascending=False)
@@ -320,32 +349,35 @@ class ChurnPredictor:
         
         return results
     
-    def get_at_risk_customers(self, merged_df: pd.DataFrame, 
+    def get_at_risk_customers(self, merged_df: pd.DataFrame,
                              top_n: int = TOP_N_AT_RISK,
                              min_probability: float = HIGH_RISK_THRESHOLD) -> pd.DataFrame:
         """
-        Get list of high-risk customers
-        
-        Args:
-            merged_df: Merged dataset
-            top_n: Number of top at-risk customers
-            min_probability: Minimum churn probability threshold
-            
-        Returns:
-            DataFrame with top at-risk customers
+        Get list of high-risk customers.
+
+        Primary filter: customers whose churn_probability >= min_probability.
+        Safety net: if that filter returns an empty table (common with real data
+        where logistic regression rarely reaches 0.7+), fall back to returning
+        the top-N customers by risk score so the UI is never empty.
         """
         predictions = self.predict_churn_probability(merged_df)
-        
-        # Filter by probability threshold
+
         at_risk = predictions[predictions['churn_probability'] >= min_probability]
-        
-        # Get top N by risk score
-        top_at_risk = at_risk.head(top_n)
-        
-        logger.info(f"✓ Identified {len(at_risk)} at-risk customers (>{min_probability*100}% probability)")
-        logger.info(f"✓ Top {len(top_at_risk)} by risk score")
-        
-        return top_at_risk
+
+        if at_risk.empty:
+            # Threshold produced no results — return top-N by risk score instead
+            # and warn so the user understands what they're seeing
+            logger.warning(
+                f"No customers exceeded the {min_probability*100:.0f}% threshold "
+                f"(max probability seen: {predictions['churn_probability'].max():.2%}). "
+                f"Showing top {top_n} by risk score instead."
+            )
+            at_risk = predictions.head(top_n)
+        else:
+            at_risk = at_risk.head(top_n)
+
+        logger.info(f"✓ Returning {len(at_risk)} at-risk customers")
+        return at_risk
     
     def save_model(self, filepath: str = None) -> str:
         """

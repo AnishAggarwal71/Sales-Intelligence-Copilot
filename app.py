@@ -19,7 +19,7 @@ from src.data_processing import DataProcessor
 from src.metrics import MetricsCalculator
 from src.forecasting import train_and_forecast
 from src.churn_model import train_and_predict_churn
-from config.settings import TOP_N_AT_RISK, FORECAST_HORIZON_MONTHS
+from config.settings import TOP_N_AT_RISK, FORECAST_HORIZON_MONTHS, HIGH_RISK_THRESHOLD
 
 # Page configuration
 st.set_page_config(
@@ -49,6 +49,21 @@ st.markdown("""
         border-radius: 0.5rem;
         border-left: 4px solid #1f77b4;
     }
+    .metric-hint {
+        font-size: 0.75rem;
+        color: #888;
+        margin-top: -0.8rem;
+        margin-bottom: 1rem;
+    }
+    .step-indicator {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        margin: 0.5rem 0;
+    }
+    .step-done   { color: #2ca02c; font-weight: 600; }
+    .step-active { color: #1f77b4; font-weight: 600; }
+    .step-todo   { color: #aaa; }
     .success-box {
         padding: 1rem;
         background-color: #d4edda;
@@ -89,6 +104,19 @@ def init_session_state():
         st.session_state.generated_report_bytes = None
     if 'generated_report_name' not in st.session_state:
         st.session_state.generated_report_name = None
+    if 'validation_report' not in st.session_state:
+        st.session_state.validation_report = {}
+
+
+def _fmt(value, fmt=",.0f", fallback="—"):
+    """Format a numeric value safely, returning fallback if NaN/Inf/None."""
+    try:
+        import math
+        if value is None or math.isnan(float(value)) or math.isinf(float(value)):
+            return fallback
+        return format(float(value), fmt)
+    except (TypeError, ValueError):
+        return fallback
 
 
 def load_sample_data():
@@ -123,11 +151,78 @@ def save_uploaded_file(uploaded_file, temp_dir: Path, base_name: str) -> Path:
     return temp_path
 
 
+def show_validation_report(report: dict):
+    """
+    Render a tiered data-validation panel.
+    - Required missing  → red block, stops the user
+    - Derivable missing → blue info card showing name, description, formula, example
+    - Optional missing  → grey note (degraded accuracy)
+    - All found         → green summary
+    """
+    from src.data_processing import COLUMN_REGISTRY
+
+    file_labels = {'customers': 'Customers file', 'subscriptions': 'Subscriptions file'}
+
+    for file_type, result in report.items():
+        label = file_labels.get(file_type, file_type.title())
+        st.markdown(f"**{label}**")
+
+        # ── Found columns ──────────────────────────────────────────────────
+        if result['found']:
+            st.success(f"✓ Found {len(result['found'])} recognised columns: "
+                       f"`{'`, `'.join(sorted(result['found']))}`")
+
+        # ── Critically missing ─────────────────────────────────────────────
+        if result['required_missing']:
+            for col, desc in result['required_missing'].items():
+                st.error(
+                    f"**Missing required column: `{col}`**\n\n"
+                    f"{desc}\n\n"
+                    f"This column cannot be calculated automatically. "
+                    f"Please add it to your file before uploading."
+                )
+
+        # ── Auto-derived ───────────────────────────────────────────────────
+        if result['derivable_missing']:
+            with st.expander(
+                f"ℹ️ {len(result['derivable_missing'])} column(s) not found — "
+                f"calculated automatically for you",
+                expanded=True
+            ):
+                for col, meta in result['derivable_missing'].items():
+                    st.markdown(f"""
+<div style="border-left: 4px solid #1f77b4; padding: 0.6rem 1rem; margin-bottom: 0.8rem; background: #f0f6ff; border-radius: 0 4px 4px 0;">
+<strong><code>{col}</code></strong><br>
+<span style="color:#444;">{meta['description']}</span><br><br>
+<strong>How it's calculated:</strong> {meta['calculation']}<br>
+<strong>Example:</strong> <em>{meta['example']}</em>
+</div>
+""", unsafe_allow_html=True)
+
+        # ── Optional missing ───────────────────────────────────────────────
+        if result['optional_missing']:
+            with st.expander(
+                f"⚠️ {len(result['optional_missing'])} optional column(s) not found "
+                f"— analysis will still run, accuracy may be reduced"
+            ):
+                for col, desc in result['optional_missing'].items():
+                    st.markdown(f"- **`{col}`** — {desc}")
+
+        st.markdown("")  # spacer between files
+
+
 def upload_section():
     """File upload section"""
     st.markdown('<div class="main-header">📊 Sales Intelligence Copilot</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">AI-powered sales forecasting and churn prediction</div>', unsafe_allow_html=True)
-    
+    st.markdown('<div class="sub-header">Upload your subscription data → get revenue forecasts, churn predictions, and an AI-generated report — in under 2 minutes.</div>', unsafe_allow_html=True)
+
+    # How it works strip
+    st.markdown(
+        "**How it works:** &nbsp; "
+        "**1️⃣ Upload** your Customers + Subscriptions CSV &nbsp;→&nbsp; "
+        "**2️⃣ Run Analysis** (AI trains in ~30 seconds) &nbsp;→&nbsp; "
+        "**3️⃣ Download** your forecast, at-risk list, and PowerPoint report"
+    )
     st.markdown("---")
     
     col1, col2 = st.columns([2, 1])
@@ -148,7 +243,7 @@ def upload_section():
                     try:
                         processor = DataProcessor()
 
-                        with st.spinner("Loading and processing data..."):
+                        with st.spinner("Loading and validating data..."):
                             temp_dir = Path("temp")
                             temp_dir.mkdir(exist_ok=True)
 
@@ -162,14 +257,25 @@ def upload_section():
                                 transactions_path = save_uploaded_file(transactions_file, temp_dir, "transactions")
                                 processor.load_transactions(str(transactions_path))
 
+                            # Build report BEFORE derivation so it reflects what the user uploaded
+                            report = processor.build_validation_report()
+
+                            # Block if any required columns are missing
+                            blocking = [f for f, r in report.items() if not r['can_proceed']]
+                            if blocking:
+                                st.session_state.validation_report = report
+                                st.rerun()
+
+                            # Auto-fill derivable columns, then merge
+                            processor.derive_missing_columns()
                             processor.merge_datasets()
 
                         st.session_state.processor = processor
+                        st.session_state.validation_report = report
                         st.session_state.data_loaded = True
                         st.session_state.analysis_complete = False
                         st.session_state.generated_report_bytes = None
                         st.session_state.generated_report_name = None
-                        st.success("✓ Data loaded successfully!")
                         st.rerun()
 
                     except Exception as e:
@@ -190,38 +296,97 @@ def upload_section():
                     st.rerun()
     
     with col2:
-        st.info("""
-        **📋 Required Data Format:**
-        
-        **Customers CSV:**
-        - customer_id
-        - signup_date
-        - plan (basic/pro/enterprise)
-        - monthly_price
-        - segment
-        
-        **Subscriptions CSV:**
-        - subscription_id
-        - customer_id
-        - period_start
-        - period_end
-        - revenue
-        - active
-        - churn_flag
-        """)
+        st.markdown("**📋 Data Format Guide**")
+
+        st.markdown("**Customers CSV**")
+        st.markdown("""
+| Column | Status |
+|--------|--------|
+| `customer_id` | ✅ Required |
+| `signup_date` | ✅ Required |
+| `monthly_price` | 🔵 Auto-calculated |
+| `plan` | ⭐ Recommended |
+| `segment` | ⭐ Recommended |
+| `country` | ➕ Optional |
+| `first_source` | ➕ Optional |
+""")
+
+        st.markdown("**Subscriptions CSV**")
+        st.markdown("""
+| Column | Status |
+|--------|--------|
+| `customer_id` | ✅ Required |
+| `period_start` | ✅ Required |
+| `period_end` | ✅ Required |
+| `revenue` | ✅ Required |
+| `churn_flag` | 🔵 Auto-calculated |
+| `active` | 🔵 Auto-calculated |
+| `is_renewal` | 🔵 Auto-calculated |
+| `subscription_id` | 🔵 Auto-calculated |
+| `num_logins` | ⭐ Recommended |
+| `feature_x_usage` | ⭐ Recommended |
+""")
+
+        st.caption("✅ Required — app won't run without these  \n"
+                   "🔵 Auto-calculated — derived from your data  \n"
+                   "⭐ Recommended — improves churn prediction accuracy  \n"
+                   "➕ Optional — used in reporting if provided")
+
+        # If there was a blocking validation error, surface it here too
+        report = st.session_state.get('validation_report', {})
+        blocking = {f: r for f, r in report.items() if not r['can_proceed']}
+        if blocking:
+            st.markdown("---")
+            st.markdown("**Issues found in your last upload:**")
+            show_validation_report(blocking)
 
 
 def data_preview_section():
     """Show data preview and quality report"""
+    # ── Back button ────────────────────────────────────────────────────────
+    if st.button("← Upload different files"):
+        st.session_state.data_loaded = False
+        st.session_state.processor = None
+        st.session_state.validation_report = {}
+        st.rerun()
+
     st.markdown("---")
     st.subheader("📊 Data Preview & Quality Report")
-    
+
+    # ── Validation report ──────────────────────────────────────────────────
+    report = st.session_state.get('validation_report', {})
+    if report:
+        # Surface blocking errors first
+        blocking = {f: r for f, r in report.items() if not r['can_proceed']}
+        if blocking:
+            st.error("Your data is missing required columns. Please fix the issues below and re-upload.")
+            show_validation_report(blocking)
+            return
+
+        # Check if anything interesting happened (derivations or optional gaps)
+        has_derived  = any(r['derivable_missing'] for r in report.values())
+        has_optional = any(r['optional_missing']  for r in report.values())
+
+        if has_derived or has_optional:
+            with st.expander("📋 Data Validation Report", expanded=has_derived):
+                show_validation_report(report)
+        else:
+            st.success("✓ All expected columns found — no adjustments needed.")
+
     processor = st.session_state.processor
     summary = processor.get_summary()
-    
+
+    # ── Persistent load-success banner ────────────────────────────────────
+    c_count = summary.get('customers_count', 0)
+    s_count = summary.get('subscriptions_count', 0)
+    if c_count == 0 or s_count == 0:
+        st.warning("⚠️ Your files loaded but contain no records. Check that the files aren't empty and the column names match the expected format.")
+    else:
+        st.success(f"✓ Data loaded — **{c_count:,} customers** and **{s_count:,} subscription records** ready for analysis.")
+
     # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
         st.metric("Total Customers", f"{summary['customers_count']:,}")
     with col2:
@@ -230,9 +395,9 @@ def data_preview_section():
         st.metric("Active Subscriptions", f"{summary.get('active_subscriptions', 0):,}")
     with col4:
         st.metric("Total Revenue", f"${summary.get('total_revenue', 0):,.0f}")
-    
+
     # Quality scores
-    st.markdown("**Data Quality Scores:**")
+    st.markdown("**Data Quality Scores** *(percentage of non-missing values in each file — higher is better)*")
     quality_cols = st.columns(len(summary['quality_scores']))
     for idx, (name, score) in enumerate(summary['quality_scores'].items()):
         with quality_cols[idx]:
@@ -312,39 +477,53 @@ def run_analysis():
 
 def results_section():
     """Display analysis results"""
+    # ── Back button ────────────────────────────────────────────────────────
+    if st.button("← Re-run or change data"):
+        st.session_state.analysis_complete = False
+        st.rerun()
+
     st.markdown("---")
     st.markdown('<div class="main-header">📈 Analysis Results</div>', unsafe_allow_html=True)
-    
+
     metrics = st.session_state.metrics
-    
+
     # KPI Cards
     st.subheader("Key Performance Indicators")
     col1, col2, col3, col4, col5 = st.columns(5)
-    
+
     with col1:
         st.metric(
             "Current MRR",
-            f"${metrics['current_mrr']:,.0f}",
-            delta=f"{metrics['mrr_growth_mom']:+.1f}% MoM"
+            f"${_fmt(metrics['current_mrr'])}",
+            delta=f"{_fmt(metrics['mrr_growth_mom'], '+.1f')}% MoM"
         )
-    
     with col2:
-        st.metric("Annual ARR", f"${metrics['arr']:,.0f}")
-    
+        st.metric("Annual ARR", f"${_fmt(metrics['arr'])}")
     with col3:
-        st.metric("Active Customers", f"{metrics['active_customers']:,}")
-    
+        st.metric("Active Customers", f"{_fmt(metrics['active_customers'], ',d')}")
     with col4:
-        st.metric("ARPU", f"${metrics['arpu']:,.2f}")
-    
+        st.metric("Avg Revenue / Customer", f"${_fmt(metrics['arpu'], ',.2f')}")
     with col5:
+        churn = metrics['churn_rate']
+        churn_safe = churn if (churn == churn and churn != float('inf')) else 0.0
         st.metric(
             "Churn Rate",
-            f"{metrics['churn_rate']:.1f}%",
-            delta=f"{metrics['churn_rate'] - 5:.1f}%",
+            f"{_fmt(churn_safe, '.1f')}%",
+            delta=f"{_fmt(churn_safe - 5, '+.1f')}% vs 5% benchmark",
             delta_color="inverse"
         )
-    
+
+    # Plain-English hints row
+    st.markdown(
+        '<div class="metric-hint">'
+        'MRR = Monthly Recurring Revenue &nbsp;|&nbsp; '
+        'ARR = MRR × 12 &nbsp;|&nbsp; '
+        'Avg Revenue / Customer = total revenue ÷ unique billed customers &nbsp;|&nbsp; '
+        'Churn Rate = % of customers who cancelled this month'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
     st.markdown("---")
     
     # Charts in tabs
@@ -407,7 +586,7 @@ def show_forecast_chart():
         x=forecast_summary['date'],
         y=forecast_summary['lower_bound'],
         mode='lines',
-        name='Lower Bound',
+        name='Forecast range (80% confidence)',
         fill='tonexty',
         fillcolor='rgba(255, 127, 14, 0.2)',
         line=dict(width=0),
@@ -425,63 +604,108 @@ def show_forecast_chart():
     st.plotly_chart(fig, width='stretch')
     
     # Show metrics
+    st.markdown("**Forecast Accuracy** *(how well the model predicted past months it hadn't seen)*")
     col1, col2, col3 = st.columns(3)
     metrics = forecaster.metrics
-    
+
     with col1:
-        st.metric("MAPE", f"{metrics.get('MAPE', 0):.2f}%")
+        st.metric("MAPE", f"{_fmt(metrics.get('MAPE'), '.2f')}%")
+        st.caption("Mean Absolute % Error — lower is better. Under 15% is good.")
     with col2:
-        st.metric("MAE", f"${metrics.get('MAE', 0):,.2f}")
+        st.metric("MAE", f"${_fmt(metrics.get('MAE'))}")
+        st.caption("Average dollar error per month in the forecast.")
     with col3:
-        st.metric("RMSE", f"${metrics.get('RMSE', 0):,.2f}")
+        st.metric("RMSE", f"${_fmt(metrics.get('RMSE'))}")
+        st.caption("Like MAE but penalises large misses more heavily.")
 
 
 def show_churn_analysis():
     """Display churn analysis"""
-    st.subheader("High-Risk Customers")
-    
+    st.subheader("Customers Most Likely to Cancel")
+    st.caption(
+        "These are **current, active customers** predicted to churn soon — not customers who have already left. "
+        "Churn Risk is the model's probability estimate. Revenue Impact Score (0–100) weights that risk "
+        "by monthly revenue, so a high-value customer with moderate risk can outrank a low-value customer with high risk."
+    )
+
     at_risk = st.session_state.at_risk_customers
-    
+
+    # ── Fallback notice if threshold wasn't met ────────────────────────────
+    threshold_pct = HIGH_RISK_THRESHOLD * 100
+    max_prob = float(at_risk['churn_probability'].max()) if not at_risk.empty else 0.0
+    if max_prob < HIGH_RISK_THRESHOLD:
+        st.info(
+            f"ℹ️ No customers currently exceed the {threshold_pct:.0f}% churn risk threshold "
+            f"(highest seen: {max_prob*100:.1f}%). "
+            f"Showing the top {len(at_risk)} customers by Revenue Impact Score instead."
+        )
+
     # Display at-risk customers table
     display_df = at_risk.head(TOP_N_AT_RISK).copy()
     display_df['churn_probability'] = (display_df['churn_probability'] * 100).round(1)
     display_df['current_revenue'] = display_df['current_revenue'].round(2)
-    display_df['risk_score'] = display_df['risk_score'].round(2)
-    
+    display_df['risk_score'] = display_df['risk_score'].round(1)
+
     st.dataframe(
         display_df[['customer_id', 'churn_probability', 'current_revenue', 'risk_score', 'tenure_months']],
         width='stretch',
         column_config={
             "customer_id": "Customer ID",
             "churn_probability": st.column_config.NumberColumn("Churn Risk (%)", format="%.1f%%"),
-            "current_revenue": st.column_config.NumberColumn("Monthly Revenue", format="$%.2f"),
-            "risk_score": st.column_config.NumberColumn("Risk Score", format="%.2f"),
+            "current_revenue": st.column_config.NumberColumn("Monthly Revenue ($)", format="$%.2f"),
+            "risk_score": st.column_config.NumberColumn("Revenue Impact Score (0–100)", format="%.1f"),
             "tenure_months": st.column_config.NumberColumn("Tenure (Months)", format="%.1f")
         }
     )
-    
+
     # Model performance
-    st.markdown("**Model Performance:**")
+    st.markdown("**Churn Model Performance**")
+    st.caption(
+        "These scores measure how accurately the model identifies customers who actually churned in historical data. "
+        "AUC above 0.75 is considered good for churn prediction."
+    )
     predictor = st.session_state.churn_predictor
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
-        st.metric("AUC", f"{predictor.metrics.get('auc', 0):.3f}")
+        st.metric("AUC", _fmt(predictor.metrics.get('auc'), '.3f'))
+        st.caption("0.5 = random, 1.0 = perfect")
     with col2:
-        st.metric("Precision", f"{predictor.metrics.get('precision', 0):.3f}")
+        st.metric("Precision", _fmt(predictor.metrics.get('precision'), '.3f'))
+        st.caption("Of flagged churners, % who actually churned")
     with col3:
-        st.metric("Recall", f"{predictor.metrics.get('recall', 0):.3f}")
+        st.metric("Recall", _fmt(predictor.metrics.get('recall'), '.3f'))
+        st.caption("Of all actual churners, % the model caught")
     with col4:
-        st.metric("F1 Score", f"{predictor.metrics.get('f1', 0):.3f}")
-    
-    # Recommendations
-    st.markdown("**💡 Recommended Actions:**")
-    st.markdown("""
-    - 🎯 Reach out to top 5 at-risk customers with retention offers
-    - 💰 Consider targeted discounts for high-revenue at-risk customers
-    - 📞 Schedule customer success calls for customers with >70% churn probability
-    - 📊 Analyze common patterns among at-risk customers to improve product
-    """)
+        st.metric("F1 Score", _fmt(predictor.metrics.get('f1'), '.3f'))
+        st.caption("Balance of Precision and Recall (higher = better)")
+
+    # Dynamic recommendations based on actual data
+    st.markdown("**💡 Recommended Actions**")
+    high_risk_count = int((at_risk['churn_probability'] >= HIGH_RISK_THRESHOLD).sum())
+    top5 = at_risk.head(5)
+    top5_rev = top5['current_revenue'].sum() if not top5.empty else 0
+
+    if high_risk_count > 0:
+        st.markdown(
+            f"- 🎯 **{high_risk_count} customer{'s' if high_risk_count != 1 else ''} exceed "
+            f"{threshold_pct:.0f}% churn risk** — prioritise personal outreach immediately"
+        )
+    else:
+        st.markdown(
+            f"- 🟡 No customers currently exceed {threshold_pct:.0f}% risk — monitor the top accounts below regularly"
+        )
+    st.markdown(
+        f"- 💰 Your top 5 at-risk accounts represent **${top5_rev:,.0f}/month** in combined revenue — "
+        f"assign dedicated customer success coverage"
+    )
+    st.markdown(
+        "- 📞 For customers with tenure < 3 months and high risk, focus on onboarding quality — "
+        "early churn is usually a product-fit issue, not a price issue"
+    )
+    st.markdown(
+        "- 📊 Export the CSV below and share with your sales/CS team to action this week"
+    )
 
 
 def show_revenue_trends():
@@ -514,35 +738,35 @@ def show_revenue_trends():
 def show_export_section():
     """Export and download options"""
     st.subheader("📥 Export Results")
-    
+
     col1, col2, col3 = st.columns(3)
-    
+
     with col1:
-        # Download at-risk customers CSV
         at_risk = st.session_state.at_risk_customers
         csv = at_risk.to_csv(index=False)
         st.download_button(
-            label="📄 Download At-Risk Customers CSV",
+            label="📄 At-Risk Customers CSV",
             data=csv,
             file_name=f"at_risk_customers_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv",
             width='stretch'
         )
-    
+        st.caption("Customer IDs, churn risk %, revenue, and tenure — share with your CS team.")
+
     with col2:
-        # Download forecast CSV
         forecast_summary = st.session_state.forecaster.get_forecast_summary()
         csv = forecast_summary.to_csv(index=False)
         st.download_button(
-            label="📈 Download Forecast CSV",
+            label="📈 MRR Forecast CSV",
             data=csv,
             file_name=f"mrr_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv",
             width='stretch'
         )
-    
+        st.caption("Monthly actuals + 3-month forecast with upper/lower confidence bounds.")
+
     with col3:
-        if st.button("📊 Generate PPT Report", width='stretch'):
+        if st.button("📊 Generate PowerPoint Report", width='stretch'):
             with st.spinner("Generating PowerPoint report..."):
                 try:
                     from src.insights_generator import generate_insights
@@ -568,14 +792,16 @@ def show_export_section():
                     report_path = Path(filepath)
                     st.session_state.generated_report_bytes = report_path.read_bytes()
                     st.session_state.generated_report_name = report_path.name
-                    st.success("✓ Report generated! Your download is ready below.")
+                    st.success("✓ Report generated! Download it below.")
 
                 except Exception as e:
                     st.error(f"Error generating report: {str(e)}")
 
+        st.caption("Executive summary + charts in a ready-to-present PowerPoint file.")
+
         if st.session_state.get('generated_report_bytes'):
             st.download_button(
-                label="📥 Download Insights PPT",
+                label="📥 Download PowerPoint",
                 data=st.session_state.generated_report_bytes,
                 file_name=st.session_state.generated_report_name or f"sales_intelligence_report_{datetime.now().strftime('%Y%m%d')}.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -593,15 +819,20 @@ def main():
         if logo_path.exists():
             st.image(str(logo_path), width='stretch')
         st.markdown("---")
-        
-        st.markdown("### 📊 Navigation")
-        if not st.session_state.data_loaded:
-            st.info("👆 Upload data to begin")
-        elif not st.session_state.analysis_complete:
-            st.info("✓ Data loaded\n\n👇 Run analysis")
-        else:
-            st.success("✓ Analysis complete!")
-        
+
+        # ── 3-step progress indicator ──────────────────────────────────────
+        step1_done   = st.session_state.data_loaded
+        step2_done   = st.session_state.analysis_complete
+
+        def _step(icon, label, state):
+            css = {"done": "step-done", "active": "step-active", "todo": "step-todo"}[state]
+            st.markdown(f'<span class="{css}">{icon} {label}</span>', unsafe_allow_html=True)
+
+        st.markdown("### Your Progress")
+        _step("✅" if step1_done  else "1️⃣", "Upload Data",    "done" if step1_done  else "active")
+        _step("✅" if step2_done  else "2️⃣", "Run Analysis",   "done" if step2_done  else ("active" if step1_done else "todo"))
+        _step("3️⃣",                           "View Results & Export", "active" if step2_done else "todo")
+
         st.markdown("---")
         st.markdown("### ℹ️ About")
         st.markdown("""
@@ -611,8 +842,8 @@ def main():
         - Identify at-risk customers
         - Generate actionable insights
         """)
-        
-        if st.button("🔄 Reset App"):
+
+        if st.button("🔄 Reset / Start Over"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
